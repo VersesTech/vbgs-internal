@@ -54,7 +54,6 @@ def show_replica():
 
     [a.set_xticks([]) for a in ax.flatten()]
     [a.set_yticks([]) for a in ax.flatten()]
-    # plt.show()
     plt.savefig("replica.png")
 
 
@@ -134,7 +133,7 @@ def show_habitat():
 
     [a.set_xticks([]) for a in ax.flatten()]
     [a.set_yticks([]) for a in ax.flatten()]
-    plt.show()
+    plt.savefig("habitat.png")
 
 
 if __name__ == "__main__":
