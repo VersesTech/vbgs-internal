@@ -31,7 +31,9 @@ def opengl_to_colmap_frame(cam):
 
 
 def render_gsplat(
-    splat,
+    mu, 
+    si, 
+    alpha,
     cam_to_world,
     intrinsics,
     height,
@@ -54,7 +56,6 @@ def render_gsplat(
         width: The desired frame width
         bg: [Optional] The backgroundcolor, will be black if unset.
     """
-    mu, si, alpha = splat
     scales, quats = covariance_to_scaling_rotation(si[:, :3, :3])
     colors = mu[:, 3:]
     center_points = mu[:, :3]

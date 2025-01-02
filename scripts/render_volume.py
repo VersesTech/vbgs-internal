@@ -44,7 +44,7 @@ def show_replica():
     with Image.open(data_iter.get_frame(i)[0]) as img:
         x = jnp.array(img)
     
-    x_hat = render_gsplat(splat, p0, data_iter.intrinsics, *x.shape[:2])
+    x_hat = render_gsplat(*splat, p0, data_iter.intrinsics, *x.shape[:2])
     fig, ax = plt.subplots(1, 2, figsize=(8, 4))
     ax[0].imshow(x)
     ax[0].set_title("Ground truth")
@@ -77,7 +77,7 @@ def show_blender():
     i = 0
     splat = Splat(*load_model(root_path / splat_path))
     x_hat = render_gsplat(
-        splat,
+        *splat,
         cam_to_worlds[i],
         data_iter._intrinsics,
         800,
@@ -119,7 +119,7 @@ def show_habitat():
     i = 0
     intrinsics, cam_to_world = data_iter.get_camera_params(i)
     # TODO check this with a working habitat model
-    x_hat = render_gsplat(splat, cam_to_world, intrinsics, 800, 800)
+    x_hat = render_gsplat(*splat, cam_to_world, intrinsics, 800, 800)
     x = Image.open(data_iter._frames[i])
 
     fig, ax = plt.subplots(1, 2, figsize=(8, 4))

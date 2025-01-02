@@ -52,7 +52,7 @@ def evaluate(splat, cameras, eval_frames, intrinsics, shape, store_path):
     mses = []
     for i in range(len(cameras)):
         x = np.array(Image.open(eval_frames[i])) / 255.0
-        x_hat = render_gsplat(splat, cameras[i], intrinsics, *shape)
+        x_hat = render_gsplat(*splat, cameras[i], intrinsics, *shape)
 
         psnrs.append(calc_psnr(x, x_hat))
         mses.append(calc_mse(x, x_hat))
