@@ -69,11 +69,19 @@ def finetune(model: DeltaMixture, data_params, data_path, subsample, n_iters, ke
     mu, si, alpha = model.extract_model(data_params)
     optimizer = optax.adam(1e-3)
     opt_state = optimizer.init((mu, si, alpha))
-    c = int(data_iter.intrinsics[0, 2]), int(data_iter.intrinsics[1, 2])
-    f = float(data_iter.intrinsics[0, 0]), float(data_iter.intrinsics[1, 1])
 
     def render(m, s, a, cam):
-        return render_gsplat(m, s, a, cam, c, f, data_iter.h, data_iter.w, jnp.zeros(3))
+        return render_gsplat(
+            m,
+            s,
+            a,
+            cam,
+            data_iter.c,
+            data_iter.f,
+            data_iter.h,
+            data_iter.w,
+            jnp.zeros(3),
+        )
 
     def loss(m, s, a, x, cam):
         x_hat = jax.lax.map(lambda c: render(m, s, a, c), cam)
@@ -188,7 +196,9 @@ def fit_continual(
     return model, metrics, data_params
 
 
-def run_experiment(key, data_path, n_components, subsample, init_random, batch_size):
+def run_experiment(
+    key, data_path, n_components, subsample, init_random, batch_size, do_finetune
+):
     # Fit continual VBEM
     key, subkey = jr.split(key)
     model, _, data_params = fit_continual(
@@ -199,7 +209,8 @@ def run_experiment(key, data_path, n_components, subsample, init_random, batch_s
         init_random=init_random,
         batch_size=batch_size,
     )
-    finetune(model, data_params, data_path, subsample, 100, key)
+    if do_finetune:
+        finetune(model, data_params, data_path, subsample, 100, key)
     return {}
 
 
@@ -222,6 +233,7 @@ def main(cfg: DictConfig) -> None:
         subsample=cfg.data.subsample_factor,
         init_random=cfg.model.init_random,
         batch_size=cfg.train.batch_size,
+        do_finetune=cfg.train.finetune,
     )
     results.update({"config": OmegaConf.to_container(cfg)})
 

@@ -31,11 +31,12 @@ from vbgs.render.volume import render_gsplat
 from vbgs.data.habitat import HabitatDataIterator
 
 
-
 def show_replica():
     root_path = Path(vbgs.__file__).parent.parent
     data_path = Path("/home/shared/Replica/room0")
-    model_path = Path("/home/shared/vbgs-results/replica_rooms_low_rf/room0/nc:100000/randinit:True_reassign:True/model_199.npz")
+    model_path = Path(
+        "/home/shared/vbgs-results/replica_rooms_low_rf/room0/nc:100000/randinit:True_reassign:True/model_199.npz"
+    )
     splat = Splat(*load_model(model_path))
 
     data_iter = ReplicaDataIterator(data_path)
@@ -43,10 +44,8 @@ def show_replica():
     p0 = data_iter.poses[i]
     with Image.open(data_iter.get_frame(i)[0]) as img:
         x = jnp.array(img)
-    c = int(data_iter.intrinsics[0, 2]), int(data_iter.intrinsics[1, 2])
-    f = float(data_iter.intrinsics[0, 0]), float(data_iter.intrinsics[1, 1])
- 
-    x_hat = render_gsplat(*splat, p0, c, f, *x.shape[:2])
+
+    x_hat = render_gsplat(*splat, p0, data_iter.c, data_iter.f, *x.shape[:2])
     fig, ax = plt.subplots(1, 2, figsize=(8, 4))
     ax[0].imshow(x)
     ax[0].set_title("Ground truth")
@@ -78,14 +77,12 @@ def show_blender():
     )
     i = 0
     splat = Splat(*load_model(root_path / splat_path))
-    c = int(data_iter.intrinsics[0, 2]), int(data_iter.intrinsics[1, 2])
-    f = float(data_iter.intrinsics[0, 0]), float(data_iter.intrinsics[1, 1])
 
     x_hat = render_gsplat(
         *splat,
         cam_to_worlds[i],
-        c,
-        f,
+        data_iter.c,
+        data_iter.f,
         800,
         800,
         bg=jnp.ones(3),

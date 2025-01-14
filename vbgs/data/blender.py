@@ -64,6 +64,8 @@ class BlenderDataIterator:
         intrinsics = intrinsics.at[1, 2].set(shape[0] / 2 - 0.5)
 
         self.intrinsics = intrinsics
+        self.c = int(intrinsics[0, 2]), int(intrinsics[1, 2])
+        self.f = float(intrinsics[0, 0]), float(intrinsics[1, 1])
 
         self._frames = data["frames"]
         self._index = 0
