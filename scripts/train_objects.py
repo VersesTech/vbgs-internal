@@ -19,6 +19,7 @@ import hydra
 import json
 import copy
 from functools import partial
+from typing import Optional, Tuple
 
 from pathlib import Path
 from tqdm import tqdm
@@ -38,79 +39,11 @@ from vbgs.model.utils import random_mean_init, store_model
 from vbgs.model.train import fit_gmm_step
 from vbgs.data.utils import create_normalizing_params, normalize_data
 from vbgs.data.blender import BlenderDataIterator
-from vbgs.model.model import DeltaMixture
+from vbgs.finetune import finetune
 from vbgs.render.volume import render_gsplat
 
+
 from model_volume import get_volume_delta_mixture
-
-
-def batched(dataloader, bs=64):
-    i = 0
-    cams, xs = [], []
-    while i < len(dataloader):
-        for _ in range(bs):
-            if i >= len(dataloader):
-                return jnp.stack(xs), jnp.stack(cams)
-            cams.append(dataloader.load_camera_params(i)[0])
-            xs.append(dataloader.get_camera_frame(i)[0])
-            i += 1
-        cams = jnp.stack(cams)
-        xs = jnp.stack(xs)
-        yield xs, cams
-        cams, xs = [], []
-
-
-def finetune(model: DeltaMixture, data_params, data_path, subsample, n_iters, key):
-    data_iter = BlenderDataIterator(
-        data_path, data_params=data_params, subsample=subsample
-    )
-
-    key, subkey = jr.split(key)
-    mu, si, alpha = model.extract_model(data_params)
-    optimizer = optax.adam(1e-3)
-    opt_state = optimizer.init((mu, si, alpha))
-
-    def render(m, s, a, cam):
-        return render_gsplat(
-            m,
-            s,
-            a,
-            cam,
-            data_iter.c,
-            data_iter.f,
-            data_iter.h,
-            data_iter.w,
-            jnp.zeros(3),
-        )
-
-    def loss(m, s, a, x, cam):
-        x_hat = jax.lax.map(lambda c: render(m, s, a, c), cam)
-        x = jnp.reshape(x[..., :3], (x.shape[0], -1))
-        x_hat = jnp.reshape(x_hat, (x_hat.shape[0], -1))
-        return jnp.sqrt((x - x_hat) ** 2).mean(axis=-1).sum()
-
-    gradfn = jax.value_and_grad(loss, [0, 1, 2])
-    for i in range(n_iters):
-        batchloader = batched(
-            BlenderDataIterator(
-                data_path, data_params=data_params, subsample=subsample
-            ),
-            bs=64,
-        )
-        for xs, cams in batchloader:
-            loss, grads = tuple(gradfn(mu, si, alpha, xs, cams))
-            updates, opt_state = optimizer.update(grads, opt_state)
-            mu, si, alpha = optax.apply_updates((mu, si, alpha), updates)
-        img_hat = render(mu, si, alpha, cams[0])
-        img_hat = img_hat / jnp.max(img_hat)  # Sometimes the render isn't normalized...
-        img = xs[0][..., :3] / 255
-        fig, axes = plt.subplots(1, 2, figsize=(4, 2))
-        axes[0].imshow(img)
-        axes[1].imshow(img_hat)
-        [a.axis("off") for a in axes.flatten()]
-        plt.savefig(f"output_{i}.png")
-        plt.close()
-        print(loss)
 
 
 def fit_continual(
@@ -176,10 +109,9 @@ def fit_continual(
     )
 
     model = copy.deepcopy(prior_model)
-
-    # data_iter._frames = data_iter._frames[::40]
     metrics = dict({})
     prior_stats, space_stats, color_stats = None, None, None
+    data_iter._frames = data_iter._frames[::40]
     for step, x in tqdm(enumerate(data_iter), total=len(data_iter)):
         model, prior_stats, space_stats, color_stats = fit_gmm_step(
             prior_model,
@@ -197,7 +129,13 @@ def fit_continual(
 
 
 def run_experiment(
-    key, data_path, n_components, subsample, init_random, batch_size, do_finetune
+    key,
+    data_path,
+    n_components,
+    subsample,
+    init_random,
+    batch_size: int,
+    do_finetune: Optional[Tuple] = None,
 ):
     # Fit continual VBEM
     key, subkey = jr.split(key)
@@ -209,8 +147,19 @@ def run_experiment(
         init_random=init_random,
         batch_size=batch_size,
     )
-    if do_finetune:
-        finetune(model, data_params, data_path, subsample, 100, key)
+    if do_finetune is not None:
+        params = model.extract_model(data_params)
+        iterator_fn = lambda k: BlenderDataIterator(
+            data_path, data_params=data_params, subsample=subsample, key=k
+        )
+        finetune(
+            *params,
+            iterator_fn,
+            do_finetune[0],
+            key,
+            bs=do_finetune[1],
+            log_every=do_finetune[2],
+        )
     return {}
 
 
@@ -233,7 +182,15 @@ def main(cfg: DictConfig) -> None:
         subsample=cfg.data.subsample_factor,
         init_random=cfg.model.init_random,
         batch_size=cfg.train.batch_size,
-        do_finetune=cfg.train.finetune,
+        do_finetune=(
+            cfg.train.finetune
+            if cfg.train.finetune is None
+            else (
+                cfg.train.finetune_iters,
+                cfg.train.finetune_batch_size,
+                cfg.train.finetune_log,
+            )
+        ),
     )
     results.update({"config": OmegaConf.to_container(cfg)})
 
