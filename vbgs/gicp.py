@@ -125,7 +125,7 @@ def icp(source, target, cov_source, cov_target, assoc_iters=2, trans_iters=10):
         assoc = associate(
             jax.vmap(partial(apply_transform, transform))(source),
             target,
-        )
+        ).reshape(-1)
         transform, cost = optimize_transform(
             transform,
             source,
