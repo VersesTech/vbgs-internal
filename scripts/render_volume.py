@@ -42,8 +42,7 @@ def show_replica():
     data_iter = ReplicaDataIterator(data_path)
     i = 100
     p0 = data_iter.poses[i]
-    with Image.open(data_iter.get_frame(i)[0]) as img:
-        x = jnp.array(img)
+    x = data_iter.get_camera_frame(i)[0]
 
     x_hat = render_gsplat(*splat, p0, data_iter.c, data_iter.f, *x.shape[:2])
     fig, ax = plt.subplots(1, 2, figsize=(8, 4))

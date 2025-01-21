@@ -19,6 +19,7 @@ from omegaconf import DictConfig, OmegaConf
 import json
 import copy
 import rich
+from functools import partial
 
 from pathlib import Path
 from tqdm import tqdm
@@ -34,6 +35,7 @@ import vbgs
 from vbgs.data.utils import create_normalizing_params, normalize_data
 from vbgs.model.utils import random_mean_init, store_model
 from vbgs.model.train import fit_gmm_step
+from vbgs.gicp import icp
 
 from vbgs.data.replica import ReplicaDataIterator
 from vbgs.model.reassign import reassign
@@ -47,11 +49,12 @@ from PIL import Image
 from vbgs.metrics import calc_psnr, calc_mse
 import matplotlib.pyplot as plt
 
+
 def evaluate(splat, cameras, eval_frames, intrinsics, shape, store_path):
     psnrs = []
     mses = []
     for i in range(len(cameras)):
-        x = np.array(Image.open(eval_frames[i])) / 255.0
+        x = np.array(eval_frames[i]) / 255.0
         c = int(intrinsics[0, 2]), int(intrinsics[1, 2])
         f = float(intrinsics[0, 0]), float(intrinsics[1, 1])
         x_hat = render_gsplat(*splat, cameras[i], c, f, *shape)
@@ -65,6 +68,26 @@ def evaluate(splat, cameras, eval_frames, intrinsics, shape, store_path):
 
 def no_reassign(*x):
     return x[0]
+
+
+class TwoStep:
+    def __init__(self, iterator):
+        self.i = 0
+        self.iterator = iterator
+
+    def __next__(self):
+        if self.i < len(self.iterator) - 1:
+            x1, x2 = next(self.iterator), next(self.iterator)
+            self.i += 1
+            return x1, x2
+        self.i = 0
+        raise StopIteration
+
+    def __iter__(self):
+        return self
+
+    def __len__(self):
+        return len(self.iterator) - 1
 
 
 def fit_continual(
@@ -106,8 +129,12 @@ def fit_continual(
         print(data_params, end="\n\n")
 
     data_iter = ReplicaDataIterator(data_path, data_params)
-    eval_cameras = [data_iter.load_camera_params(i)[1] for i in jnp.arange(0, len(data_iter), 2)]
-    eval_frames = [data_iter.get_frame(i)[0] for i in jnp.arange(0, len(data_iter), 2)]
+    eval_cameras = [
+        data_iter.load_camera_params(i)[1] for i in jnp.arange(0, len(data_iter), 2)
+    ]
+    eval_frames = [
+        data_iter.get_camera_frame(i)[0] for i in jnp.arange(0, len(data_iter), 2)
+    ]
     # data_iter.indices = np.arange(0, 2000, 10)
     data_iter.indices = np.arange(0, 2000, 400)
 
@@ -136,19 +163,58 @@ def fit_continual(
     )
 
     model = copy.deepcopy(prior_model)
+    matching_model = copy.deepcopy(model)
 
-    metrics = dict(
-        {"psnr": {"mean": [], "std": []}, "mse": {"mean": [], "std": []}}
+    # fit the initial step
+    x = next(data_iter)
+    prior_model = reassign_fn(prior_model, model, x, batch_size, reassign_fraction)
+
+    model, prior_stats, space_stats, color_stats = fit_gmm_step(
+        prior_model,
+        model,
+        data=x[::4],
+        batch_size=batch_size,
+        prior_stats=None,
+        space_stats=None,
+        color_stats=None,
     )
-    prior_stats, space_stats, color_stats = None, None, None
-    for step, x in tqdm(enumerate(data_iter), total=len(data_iter)):
-        prior_model = reassign_fn(
-            prior_model, model, x, batch_size, reassign_fraction
+
+    metrics = dict({"psnr": {"mean": [], "std": []}, "mse": {"mean": [], "std": []}})
+    transform = jnp.eye(4)
+
+    apply_transform = lambda t, x: (t @ jnp.ones(4).at[:3].set(x))[:3]
+
+    for step, x in tqdm(enumerate(data_iter, start=1), total=len(data_iter)):
+        # do one fit with the empty model
+        target_model = copy.deepcopy(matching_model)
+        target_prior = copy.deepcopy(matching_model)
+        target_model, *_ = fit_gmm_step(
+            target_prior,
+            target_model,
+            data=x[::4],
+            batch_size=batch_size,
+            prior_stats=None,
+            space_stats=None,
+            color_stats=None,
         )
+        mu_target, si_target, _ = target_model.extract_model(data_params)
+        mu_source, si_source, _ = model.extract_model(data_params)
+        transform = icp(
+            mu_source[:, :3],
+            mu_target[:, :3],
+            si_source[:, :3, :3],
+            si_target[:, :3, :3],
+        )
+        transform = jnp.linalg.inv(transform)
+        x_trans = x.at[:, :3].set(
+            jax.vmap(partial(apply_transform, transform))(x[:, :3])
+        )
+        # update the model with the transformed poses
+        prior_model = reassign_fn(prior_model, model, x, batch_size, reassign_fraction)
         model, prior_stats, space_stats, color_stats = fit_gmm_step(
             prior_model,
             model,
-            data=x[::4],
+            data=x_trans[::4],
             batch_size=batch_size,
             prior_stats=prior_stats,
             space_stats=space_stats,
@@ -156,9 +222,7 @@ def fit_continual(
         )
 
         if step % eval_every == 0:
-            store_model(
-                model, data_params, f"model_{step:02d}.npz", use_numpy=True
-            )            
+            store_model(model, data_params, f"model_{step:02d}.npz", use_numpy=True)
             p, m = evaluate(
                 model.extract_model(data_params),
                 eval_cameras,
@@ -167,7 +231,6 @@ def fit_continual(
                 (data_iter.h, data_iter.w),
                 f"results_{step:02d}.npz",
             )
-
 
             metrics["psnr"]["mean"].append(p.mean())
             metrics["psnr"]["std"].append(p.std())

@@ -90,16 +90,19 @@ class DeltaMixture(equinox.Module):
         )(mu, si)
 
         if clip_val is not None:
-            si_diag = jnp.diagonal(si, axis1=1, axis2=2).clip(
-                clip_val, jnp.inf
-            )
+            si_diag = jnp.diagonal(si, axis1=1, axis2=2).clip(clip_val, jnp.inf)
             si = jax.vmap(lambda x, y: jnp.fill_diagonal(x, y, inplace=False))(
                 si, si_diag
             )
 
         return mu, si
 
-    def extract_model(self, data_params):
+    def extract_model(self, data_params, filter_unused=False):
         mu, si = self.denormalize(data_params, clip_val=None)
         alpha = self.prior.alpha.reshape(-1)
+        if filter_unused is True:
+            mask = alpha > self.prior.alpha.min()
+            alpha = alpha[mask]
+            mu = mu[mask]
+            si = si[mask]
         return Splat(mu, si, alpha)

@@ -69,11 +69,19 @@ class ReplicaDataIterator:
         camera_to_world = self.poses[idx]
         return self.intrinsics, camera_to_world
 
-    def get_frame(self, i):
+    def get_camera_frame(self, i):
         idx = str(i).zfill(6)
         colorpath = self._datapath / f"frame{idx}.jpg"
         depthpath = self._datapath / f"depth{idx}.png"
-        return colorpath, depthpath
+
+        color = jnp.array(
+            Image.open(colorpath).resize((self.w, self.h), Image.Resampling.NEAREST)
+        )
+        depth = jnp.array(
+            Image.open(depthpath).resize((self.w, self.h), Image.Resampling.NEAREST)
+        )
+        depth = depth / self.depth_scale
+        return color, depth
 
     def __len__(self):
         return len(self.indices)
@@ -91,15 +99,8 @@ class ReplicaDataIterator:
         i = self.indices[self.i]
         self.i += 1
 
-        colorpath, depthpath = self.get_frame(i)
+        color, depth = self.get_camera_frame(i)
 
-        color = jnp.array(
-            Image.open(colorpath).resize((self.w, self.h), Image.Resampling.NEAREST)
-        )
-        depth = jnp.array(
-            Image.open(depthpath).resize((self.w, self.h), Image.Resampling.NEAREST)
-        )
-        depth = depth / self.depth_scale
         camera_to_world = self.poses[i]
         data = jnp.concatenate(
             transform_uvd_to_points(
