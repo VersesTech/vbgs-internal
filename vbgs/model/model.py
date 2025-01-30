@@ -51,7 +51,7 @@ class DeltaMixture(equinox.Module):
     def prior(self):
         return self.mixture.prior
 
-    def denormalize(self, params, clip_val=None):
+    def denormalize(self, params=None, clip_val=None):
         """
         Invert the normalization step applied to the data, such that
         the model is now in the space of the original data.
@@ -81,13 +81,14 @@ class DeltaMixture(equinox.Module):
         si = si.at[:, :-3, :-3].set(si_uv)
         si = si.at[:, -3:, -3:].set(si_rgb)
 
-        mu, si = jax.vmap(
-            partial(
-                transform_mvn,
-                params["stdevs"].flatten(),
-                params["offset"].flatten(),
-            )
-        )(mu, si)
+        if params is not None:
+            mu, si = jax.vmap(
+                partial(
+                    transform_mvn,
+                    params["stdevs"].flatten(),
+                    params["offset"].flatten(),
+                )
+            )(mu, si)
 
         if clip_val is not None:
             si_diag = jnp.diagonal(si, axis1=1, axis2=2).clip(

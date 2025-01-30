@@ -37,6 +37,65 @@ def update_initial_model(initial_model, s_means, c_means):
     )
     return initial_model
 
+def padzero(data, batch_size):
+    datalen = len(data)
+    n_batches = datalen // batch_size
+    remainder = datalen - (n_batches * batch_size)
+    topad = batch_size - remainder
+    return jnp.concatenate((data, jnp.zeros((topad, *data.shape[1:]))), axis=0), topad
+
+
+def reassign2(
+    initial_model, model, data, batch_size, fraction=0.05, debug=False
+):
+    n_batches = int(np.ceil(data.shape[0] / batch_size))
+    padded_data, cutoff = padzero(data, batch_size)
+
+    def step(xi):
+        elbos, post = compute_elbo_delta(initial_model, xi)
+        return elbos
+
+    padded_data = jnp.reshape(padded_data, (n_batches, batch_size, *data.shape[1:], 1))
+    elbos = jax.lax.map(step, padded_data).flatten()
+    p_elbo = -elbos[:-cutoff]
+    # p_elbo_min = -jnp.nanmax(elbos.at[:-cutoff].set(jnp.nan))  # using this way the array shape should vary less
+    
+    # This sum is still quite heavy in the profile.
+    available = jnp.sum(
+        model.prior.alpha <= initial_model.prior.prior_alpha.min()
+    )
+
+    n_reassign = int(available * fraction)
+
+    # p_elbo = -elbos
+    p_elbo = p_elbo - p_elbo.min()  # smallest value 0
+    p_elbo = p_elbo / p_elbo.sum()  # sum to 1
+
+    point_idcs = np.random.choice(
+        np.arange(len(p_elbo)),
+        p=p_elbo,
+        size=n_reassign,
+        replace=False,
+    )
+    component_idcs = model.prior.alpha.argsort()[:n_reassign]  # this is also not going to be very fast..
+
+    # basically, if we can set the means of the initial model to these data
+    # points, we can do a regular update after.
+    s_means = initial_model.likelihood.mean
+    s_means = s_means.at[component_idcs].set(data[point_idcs, :3, jnp.newaxis])
+
+    c_means = initial_model.delta.mean
+    c_means = c_means.at[component_idcs].set(data[point_idcs, 3:, jnp.newaxis])
+
+    initial_model = update_initial_model(initial_model, s_means, c_means)
+
+    if debug:
+        # plot_selection(elbos, point_idcs, data[:, 3:].reshape((512, 512, 3)))
+        return initial_model, {"elbo": elbos, "p_elbo": p_elbo}
+    else:
+        return initial_model
+
+
 
 def reassign(
     initial_model, model, data, batch_size, fraction=0.05, debug=False
@@ -72,8 +131,8 @@ def reassign(
 
         elbos = jnp.concatenate([elbos, elbo], axis=0)
 
-    available = sum(
-        model.prior.alpha <= initial_model.prior.prior_alpha.min().item()
+    available = jnp.sum(
+        model.prior.alpha <= initial_model.prior.prior_alpha.min()
     )
 
     n_reassign = int(available * fraction)
