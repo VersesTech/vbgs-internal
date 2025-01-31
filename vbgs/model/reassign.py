@@ -83,7 +83,7 @@ def reassign(initial_model, model, data, batch_size, fraction=0.05, debug=False)
     # available = jnp.sum(mask)
 
     # n_reassign = int(available * fraction)
-    n_reassign = 1000
+    n_reassign = 50
     component_idcs = jnp.flatnonzero(mask)[:n_reassign]
 
     p_elbo = -elbos
