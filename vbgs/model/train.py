@@ -17,6 +17,7 @@
 import jax
 import jax.numpy as jnp
 from jax.nn import softmax
+import jax.tree_util as jtu
 from jax.scipy.special import logsumexp
 
 import numpy as np
@@ -106,7 +107,7 @@ def compute_elbo_delta(model, data):
     d = model.mixture.expand_to_categorical_dims(data)
 
     # spatial and color information is stored concatenated in the final dim
-    ds, dc = d[:, :, :-3], d[:, :, -3:]
+    ds, dc = d[:, :, :-3, :], d[:, :, -3:, :]
 
     space_logprob = model.mixture.likelihood.expected_log_likelihood(ds)
     color_logprob = model.delta.expected_log_likelihood(dc)
@@ -122,12 +123,10 @@ def compute_elbo_delta(model, data):
     space_kl = model.mixture.likelihood.kl_divergence().sum(mixdims)
     color_kl = model.delta.kl_divergence().sum(mixdims)
 
-    elbo = elbo_contrib - space_kl - prior_kl - color_kl
-
-    # elbo = elbo.sum(sample_dims)
+    elbo = elbo_contrib.sum() - space_kl - prior_kl - color_kl
 
     posteriors = softmax(logprob, mixdims)
-    return elbo, posteriors
+    return elbo_contrib.sum(), posteriors
 
 
 def fit_gmm_step(
@@ -138,6 +137,7 @@ def fit_gmm_step(
     prior_stats=None,
     space_stats=None,
     color_stats=None,
+    lr=1.0,
 ):
     """
     Compute a single update step for the `DeltaMixture` using the assignments
@@ -160,7 +160,9 @@ def fit_gmm_step(
                         returned at the previous step.
     :returns model: DeltaMixture model after updating
     """
+    elbo_total = 0
     n_batches = int(np.ceil(data.shape[0] / batch_size))
+    assignments = jnp.zeros((0,))
     for batch_idx in range(n_batches):
         xi = data[batch_idx * batch_size : (batch_idx + 1) * batch_size]
         xi = jnp.expand_dims(jnp.array(xi), -1)
@@ -175,12 +177,15 @@ def fit_gmm_step(
                 [xi, jnp.zeros((batch_size - size, *xi.shape[1:]))],
                 axis=0,
             )
-            _, posteriors = compute_elbo_delta(initial_model, xi)
+            elbo, posteriors = compute_elbo_delta(initial_model, xi)
             xi = xi[:size]
             posteriors = posteriors[:size]
         else:
-            _, posteriors = compute_elbo_delta(initial_model, xi)
+            elbo, posteriors = compute_elbo_delta(initial_model, xi)
 
+        assignments = jnp.concatenate([assignments, posteriors.argmax(-1)])
+
+        elbo_total += elbo.sum()
         cat_i = initial_model.mixture.expand_to_categorical_dims(xi)
 
         # Compute the sufficient statistics using optimus methods
@@ -202,6 +207,10 @@ def fit_gmm_step(
             space_stats = ss
             color_stats = cs
         else:
+            ss = jtu.tree_map(lambda x: lr * x, ss)
+            ps = jtu.tree_map(lambda x: lr * x, ps)
+            cs = jtu.tree_map(lambda x: lr * x, cs)
+
             prior_stats = utils.apply_add(ps, prior_stats)
             space_stats = utils.apply_add(ss, space_stats)
             color_stats = utils.apply_add(cs, color_stats)
@@ -216,4 +225,11 @@ def fit_gmm_step(
         color_stats, **initial_model.mixture.likelihood_opts
     )
 
-    return model, prior_stats, space_stats, color_stats
+    return (
+        model,
+        prior_stats,
+        space_stats,
+        color_stats,
+        elbo_total,
+        assignments,
+    )

@@ -65,7 +65,7 @@ class DeltaMixture(equinox.Module):
         mu_uv = self.mixture.likelihood.mean[:, :, 0]
         si_uv = self.mixture.likelihood.expected_sigma()
 
-        mu_rgb = self.delta.likelihood.mean[:, :, 0]
+        mu_rgb = self.delta.mean[:, :, 0]
         si_rgb = jnp.eye(3).reshape(-1, 3, 3)
 
         n = self.mixture.likelihood.event_shape[0] + self.delta.event_shape[0]

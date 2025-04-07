@@ -54,7 +54,11 @@ def load_model(file_path):
             alpha = jnp.array(model["alpha"])
         return mu, si, alpha
     model = jnp.load(file_path)
-    return jnp.array(model["mu"]), jnp.array(model["si"]), jnp.array(model["alpha"])
+    return (
+        jnp.array(model["mu"]),
+        jnp.array(model["si"]),
+        jnp.array(model["alpha"]),
+    )
 
 
 def random_mean_init(
@@ -76,14 +80,18 @@ def random_mean_init(
         mean_init = mean_init.at[:, -3:].set(0)
     else:
         # Initialize the components around the points from the data
-        idcs = jr.randint(param_init_key, component_shape, minval=0, maxval=len(x))
+        idcs = jr.randint(
+            param_init_key, component_shape, minval=0, maxval=len(x)
+        )
 
         mean_init = jnp.zeros(component_shape + event_shape)
         mean_init = mean_init.at[:].set(x[idcs].reshape((-1, *event_shape)))
 
     if add_noise:
         key, subkey = jr.split(param_init_key)
-        mean_init = mean_init + jr.normal(subkey, shape=mean_init.shape) * 0.025
+        mean_init = (
+            mean_init + jr.normal(subkey, shape=mean_init.shape) * 0.025
+        )
 
     return mean_init
 

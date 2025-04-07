@@ -26,15 +26,27 @@ from vbgs.model.train import compute_elbo_delta
 @jax.jit
 def update_initial_model(initial_model, s_means, c_means):
     initial_model = eqx.tree_at(
-        lambda model: model.likelihood._posterior_params.eta.eta_1,
+        lambda model: model.mixture.likelihood._posterior_params.eta.eta_1,
         initial_model,
-        replace=s_means * initial_model.likelihood.kappa,
+        replace=s_means * initial_model.mixture.likelihood.kappa,
     )
     initial_model = eqx.tree_at(
         lambda model: model.delta._posterior_params.eta.eta_1,
         initial_model,
         replace=c_means * initial_model.delta.kappa,
     )
+
+    initial_model.mixture.likelihood.likelihood.nat_params = (
+        initial_model.mixture.likelihood.map_params_to_likelihood(
+            initial_model.mixture.likelihood.expected_likelihood_params()
+        )
+    )
+    initial_model.delta.likelihood.nat_params = (
+        initial_model.delta.map_params_to_likelihood(
+            initial_model.delta.expected_likelihood_params()
+        )
+    )
+
     return initial_model
 
 

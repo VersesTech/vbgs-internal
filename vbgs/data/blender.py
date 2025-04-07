@@ -52,8 +52,6 @@ class BlenderDataIterator:
 
         shape = jnp.array(Image.open(data_path / color_path)).shape
 
-        print(data.keys())
-
         # For the blender dataset fx = fy
         angle_x = data["camera_angle_x"]
         fx = shape[1] / (2 * jnp.tan(angle_x / 2))

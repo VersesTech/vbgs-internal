@@ -45,7 +45,7 @@ def render_gsplat(
     glob_scale=1.0,
     clip_thresh=0.01,
     block_size=16,
-    from_opengl=True
+    from_opengl=True,
 ):
     """Uses the gsplats rasterization code to render a vbgs splat.
 
@@ -70,7 +70,7 @@ def render_gsplat(
         bg = jnp.zeros(3)
     if from_opengl:
         cam_to_world = opengl_to_colmap_frame(cam_to_world)
-    
+
     world_to_cam = jnp.linalg.inv(cam_to_world)
     return jsplat.render(
         center_points.astype(jnp.float32),
@@ -109,9 +109,9 @@ def covariance_to_scaling_rotation(covariance):
     # Rotation is basically the normalized matrix left over
     rotation = mat_L / jnp.expand_dims(scales, -1)
 
-    rec = jax.vmap(lambda r, s: jnp.dot(r, jnp.dot(s, jnp.dot(s.T, r.T))))
-    scale_mat = jnp.eye(3).reshape((1, 3, 3)) * scales.reshape(-1, 3, 1)
-    res = rec(rotation, scale_mat)
+    # rec = jax.vmap(lambda r, s: jnp.dot(r, jnp.dot(s, jnp.dot(s.T, r.T))))
+    # scale_mat = jnp.eye(3).reshape((1, 3, 3)) * scales.reshape(-1, 3, 1)
+    # res = rec(rotation, scale_mat)
 
     # Convert to quaternion
     wxyz = jax.vmap(rot_mat_to_quat)(rotation)

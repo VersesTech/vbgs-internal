@@ -75,23 +75,21 @@ def get_volume_delta_mixture(
     delta_prior_params = MultivariateNormal.init_default_params(
         component_shape,
         color_event_shape,
-        scale=1e5,
+        scale=1,  # 1e5
         dof_offset=dof_offset,
         default_event_dim=default_event_dim,
     )
     delta_prior_params = ArrayDict(
         mean=delta_prior_params.mean,
-        kappa=delta_prior_params.kappa / 1e2,
-        # We want to initialize with a large variance
-        u=delta_prior_params.u / 100,
+        kappa=delta_prior_params.kappa / 1e3,  # / 1e1,
+        u=delta_prior_params.u,  # * 100,
         n=delta_prior_params.n,
     )
 
     delta_params = ArrayDict(
         mean=mean_init[:, -3:, :],
         kappa=delta_prior_params.kappa,
-        # We want to initialize with a large variance
-        u=delta_prior_params.u * 1e5,
+        u=delta_prior_params.u,
         n=delta_prior_params.n,
     )
 
