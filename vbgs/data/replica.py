@@ -91,13 +91,20 @@ class ReplicaDataIterator:
         i = self.indices[self.i]
         self.i += 1
 
+        return self.get(i)
+
+    def get(self, i):
         colorpath, depthpath = self.get_frame(i)
 
         color = jnp.array(
-            Image.open(colorpath).resize((self.w, self.h), Image.Resampling.NEAREST)
+            Image.open(colorpath).resize(
+                (self.w, self.h), Image.Resampling.NEAREST
+            )
         )
         depth = jnp.array(
-            Image.open(depthpath).resize((self.w, self.h), Image.Resampling.NEAREST)
+            Image.open(depthpath).resize(
+                (self.w, self.h), Image.Resampling.NEAREST
+            )
         )
         depth = depth / self.depth_scale
         camera_to_world = self.poses[i]

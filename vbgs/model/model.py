@@ -81,13 +81,14 @@ class DeltaMixture(equinox.Module):
         si = si.at[:, :-3, :-3].set(si_uv)
         si = si.at[:, -3:, -3:].set(si_rgb)
 
-        mu, si = jax.vmap(
-            partial(
-                transform_mvn,
-                params["stdevs"].flatten(),
-                params["offset"].flatten(),
-            )
-        )(mu, si)
+        if params is not None:
+            mu, si = jax.vmap(
+                partial(
+                    transform_mvn,
+                    params["stdevs"].flatten(),
+                    params["offset"].flatten(),
+                )
+            )(mu, si)
 
         if clip_val is not None:
             si_diag = jnp.diagonal(si, axis1=1, axis2=2).clip(

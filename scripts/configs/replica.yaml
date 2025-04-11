@@ -1,5 +1,5 @@
 seed: 0
-device: 1
+device: 0
 experiment_name: cloud_creation_to_delete
 model: 
   n_components: 100_000
