@@ -10,7 +10,7 @@ model:
   reassign_fraction: 0.01
 data: 
   model_name: room0
-  data_path: /home/ozan/verses/data/${data.model_name}/
+  data_path: /home/shared/Replica/data/${data.model_name}/
   subsample_factor: null
 train: 
   batch_size: 500
