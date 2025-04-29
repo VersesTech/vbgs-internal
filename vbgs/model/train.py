@@ -161,7 +161,12 @@ def fit_gmm_step(
     :returns model: DeltaMixture model after updating
     """
     n_batches = int(np.ceil(data.shape[0] / batch_size))
+    # we can look into jax.lax.map to also force this to be fixed size?
+    # if we aot compile this loop as well we'll know when we mess up the sizes
     for batch_idx in range(n_batches):
+
+        # IDEA: reshape to batch first, and iterate over batches like that
+        # this eliminates one dynamic slice?
         xi = data[batch_idx * batch_size : (batch_idx + 1) * batch_size]
         xi = jnp.expand_dims(jnp.array(xi), -1)
 
@@ -171,6 +176,8 @@ def fit_gmm_step(
             # NOTE: the elbo will not be correct since it's contributing the
             # log likelihood of the augmented zeros. But since we don't use the
             # elbo here, it is not a problem.
+
+            # Do not do concatenation in loop!
             xi = jnp.concatenate(
                 [xi, jnp.zeros((batch_size - size, *xi.shape[1:]))],
                 axis=0,

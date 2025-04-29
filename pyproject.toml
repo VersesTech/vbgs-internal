@@ -18,13 +18,15 @@ dependencies = [
     "ruff>=0.6.8",
     "tqdm>=4.66.5",
     "pybind11>=2.13",
-    "jaxsplat @ git+ssh://git@github.com/VersesTech/jaxsplat.git"
 ]
 
 [project.optional-dependencies]
 gpu = [
     'jax[cuda12]>=0.3.4',
     'jaxlib[cuda12]>=0.3.4',
+]
+renderer = [
+    "jaxsplat @ git+ssh://git@github.com/VersesTech/jaxsplat.git"
 ]
 
 [tool.setuptools]

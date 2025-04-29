@@ -14,9 +14,10 @@
 # limitations under the License.
 
 import numpy as np
-
+import timeit
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 
 import equinox as eqx
 
@@ -38,9 +39,15 @@ def update_initial_model(initial_model, s_means, c_means):
     return initial_model
 
 
-def reassign(
-    initial_model, model, data, batch_size, fraction=0.05, debug=False
-):
+def padzero(data, batch_size):
+    datalen = len(data)
+    n_batches = datalen // batch_size
+    remainder = datalen - (n_batches * batch_size)
+    topad = batch_size - remainder
+    return jnp.concatenate((data, jnp.zeros((topad, *data.shape[1:]))), axis=0), topad
+
+
+def reassign(initial_model, model, data, batch_size, fraction=0.05, debug=False):
     """
     Heuristic to force better assignments. Takes n points with the lowest elbo,
     and reassigns them to n components that are currently unused.
@@ -72,23 +79,26 @@ def reassign(
 
         elbos = jnp.concatenate([elbos, elbo], axis=0)
 
-    available = sum(
-        model.prior.alpha <= initial_model.prior.prior_alpha.min().item()
-    )
+    mask = model.prior.alpha <= initial_model.prior.prior_alpha.min()
+    # available = jnp.sum(mask)
 
-    n_reassign = int(available * fraction)
+    # n_reassign = int(available * fraction)
+    n_reassign = 50
+    component_idcs = jnp.flatnonzero(mask)[:n_reassign]
 
     p_elbo = -elbos
     p_elbo = p_elbo - p_elbo.min()  # smallest value 0
     p_elbo = p_elbo / p_elbo.sum()  # sum to 1
 
+    # The cast to numpy is intentional, due to the dynamic length of elbos this would
+    # otherwise trip up the jax jit compiler for some reason.
     point_idcs = np.random.choice(
         np.arange(len(elbos)),
         p=p_elbo,
         size=n_reassign,
         replace=False,
     )
-    component_idcs = model.prior.alpha.argsort()[:n_reassign]
+    point_idcs = point_idcs[:len(component_idcs)]
 
     # basically, if we can set the means of the initial model to these data
     # points, we can do a regular update after.
