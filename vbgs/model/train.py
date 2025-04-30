@@ -23,6 +23,8 @@ import numpy as np
 
 from vbgs.vi import utils
 
+from functools import partial
+
 
 def get_likelihood_sst(self, data, weights):
     """
@@ -138,6 +140,7 @@ def fit_gmm_step(
     prior_stats=None,
     space_stats=None,
     color_stats=None,
+    n_batches=1,
 ):
     """
     Compute a single update step for the `DeltaMixture` using the assignments
@@ -160,11 +163,11 @@ def fit_gmm_step(
                         returned at the previous step.
     :returns model: DeltaMixture model after updating
     """
+
     n_batches = int(np.ceil(data.shape[0] / batch_size))
     # we can look into jax.lax.map to also force this to be fixed size?
     # if we aot compile this loop as well we'll know when we mess up the sizes
     for batch_idx in range(n_batches):
-
         # IDEA: reshape to batch first, and iterate over batches like that
         # this eliminates one dynamic slice?
         xi = data[batch_idx * batch_size : (batch_idx + 1) * batch_size]

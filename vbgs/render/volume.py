@@ -31,7 +31,7 @@ def opengl_to_colmap_frame(cam):
     return cam.at[:3, 1:3].set(cam[:3, 1:3] * -1)
 
 
-@partial(jax.jit, static_argnames=["height", "width", "c", "f"])
+@partial(jax.jit, static_argnames=["height", "width", "c", "f", "glob_scale"])
 def render_gsplat(
     mu,
     si,
@@ -105,9 +105,9 @@ def covariance_to_scaling_rotation(covariance, as_quat=True):
     # Rotation is basically the normalized matrix left over
     rotation = mat_L / jnp.expand_dims(scales, -1)
 
-    rec = jax.vmap(lambda r, s: jnp.dot(r, jnp.dot(s, jnp.dot(s.T, r.T))))
-    scale_mat = jnp.eye(3).reshape((1, 3, 3)) * scales.reshape(-1, 3, 1)
-    res = rec(rotation, scale_mat)
+    # rec = jax.vmap(lambda r, s: jnp.dot(r, jnp.dot(s, jnp.dot(s.T, r.T))))
+    # scale_mat = jnp.eye(3).reshape((1, 3, 3)) * scales.reshape(-1, 3, 1)
+    # res = rec(rotation, scale_mat)
 
     # Convert to quaternion
     wxyz = jax.vmap(rot_mat_to_quat)(rotation)

@@ -15,6 +15,7 @@
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
+import wandb
 
 import json
 import copy
@@ -38,6 +39,7 @@ from vbgs.model.train import fit_gmm_step
 from vbgs.data.replica import ReplicaDataIterator
 from vbgs.model.reassign import reassign
 
+import time
 
 from model_volume import get_volume_delta_mixture
 
@@ -47,20 +49,38 @@ from PIL import Image
 from vbgs.metrics import calc_psnr, calc_mse
 import matplotlib.pyplot as plt
 
+from datetime import datetime
+
+
 def evaluate(splat, cameras, eval_frames, intrinsics, shape, store_path):
     psnrs = []
     mses = []
+
+    ims = []
+
+    log_every = len(cameras) // 5
+
     for i in range(len(cameras)):
         x = np.array(Image.open(eval_frames[i])) / 255.0
         c = int(intrinsics[0, 2]), int(intrinsics[1, 2])
         f = float(intrinsics[0, 0]), float(intrinsics[1, 1])
-        x_hat = render_gsplat(*splat, cameras[i], c, f, *shape)
+        x_hat = render_gsplat(
+            *splat, cameras[i], c, f, *shape, glob_scale=1.41
+        )
 
         psnrs.append(calc_psnr(x, x_hat))
         mses.append(calc_mse(x, x_hat))
 
+        if i % log_every == 0:
+            ims.append(
+                (np.vstack([np.array(x), np.array(x_hat)]) * 255.0).astype(
+                    np.uint8
+                )
+            )
+
     np.savez(store_path, psnr=np.array(psnrs), mse=np.array(mses))
-    return np.array(psnrs), np.array(mses)
+
+    return np.array(psnrs), np.array(mses), np.hstack(ims)
 
 
 def no_reassign(*x):
@@ -105,11 +125,18 @@ def fit_continual(
         print("Normalizing data parameters: ")
         print(data_params, end="\n\n")
 
+    data_params = None
+
     data_iter = ReplicaDataIterator(data_path, data_params)
-    eval_cameras = [data_iter.load_camera_params(i)[1] for i in jnp.arange(0, len(data_iter), 2)]
-    eval_frames = [data_iter.get_frame(i)[0] for i in jnp.arange(0, len(data_iter), 2)]
-    # data_iter.indices = np.arange(0, 2000, 10)
-    data_iter.indices = np.arange(0, 2000, 400)
+    eval_cameras = [
+        data_iter.load_camera_params(i)[1]
+        for i in jnp.arange(0, len(data_iter), 2)
+    ]
+    eval_frames = [
+        data_iter.get_frame(i)[0] for i in jnp.arange(0, len(data_iter), 2)
+    ]
+    data_iter.indices = np.arange(0, 2000, 10)
+    # data_iter.indices = np.arange(0, 2000, 400)
 
     key, subkey = jr.split(key)
     mean_init = random_mean_init(
@@ -145,6 +172,8 @@ def fit_continual(
         prior_model = reassign_fn(
             prior_model, model, x, batch_size, reassign_fraction
         )
+
+        bt = time.time()
         model, prior_stats, space_stats, color_stats = fit_gmm_step(
             prior_model,
             model,
@@ -154,12 +183,14 @@ def fit_continual(
             space_stats=space_stats,
             color_stats=color_stats,
         )
+        print(time.time() - bt, "for fit")
 
         if step % eval_every == 0:
+            bt = time.time()
             store_model(
                 model, data_params, f"model_{step:02d}.npz", use_numpy=True
-            )            
-            p, m = evaluate(
+            )
+            p, m, ims = evaluate(
                 model.extract_model(data_params),
                 eval_cameras,
                 eval_frames,
@@ -167,12 +198,21 @@ def fit_continual(
                 (data_iter.h, data_iter.w),
                 f"results_{step:02d}.npz",
             )
-
+            print(time.time() - bt, "for eval")
 
             metrics["psnr"]["mean"].append(p.mean())
             metrics["psnr"]["std"].append(p.std())
             metrics["mse"]["mean"].append(m.mean())
             metrics["mse"]["std"].append(m.std())
+
+            wandb.log(
+                {
+                    "psnr": p.mean(),
+                    "mse": m.mean(),
+                    "reconstructions": wandb.Image(ims),
+                },
+                step=step,
+            )
 
             if step % 10 == 0:
                 print(f"PSNR: {p.mean():.2f} +- {p.std():.2f}")
@@ -226,9 +266,25 @@ def run_experiment(
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
-    jax.config.update("jax_default_device", jax.devices()[int(cfg.device)])
-
+    # Create a human readeable timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
     root_path = Path(vbgs.__file__).parent.parent
+
+    wandb.init(
+        reinit=True,
+        group=cfg.experiment_name,
+        project="vbgs",
+        config=dict(cfg),
+        resume="allow",
+        name=f"{cfg.experiment_name}-{timestamp}",
+    )
+
+    wandb.run.log_code(
+        str(root_path),
+        include_fn=lambda path: Path(path).suffix in [".py", ".json", ".yaml"],
+    )
+
+    jax.config.update("jax_default_device", jax.devices()[int(cfg.device)])
 
     # Minor hack to launch everything at once
     data_path = cfg.data.data_path
