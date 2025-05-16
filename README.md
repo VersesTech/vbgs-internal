@@ -1,8 +1,5 @@
 # Variational Bayes Gaussian Splatting
 
-This repository contains code accompanying the paper [Variational Bayes Gaussian Splatting](https://arxiv.org/abs/2410.03592
-) by Toon Van de Maele, Ozan Catal, Alexander Tschantz, Christopher L. Buckley, and Tim Verbelen. 
-
 ## Installation 
 
 The package for optimizing VBGS can be installed using the following command in the root folder: 
@@ -62,22 +59,6 @@ Running the Habitat benchmark and continual benchmark is similar to the object c
 .
 ```
 python scripts/train_rooms.py
-```
-
-## BibTeX
-
-
-If you find this repository helpful, please consider citing our work: 
-```
-@misc{vandemaele2024variationalbayesgaussiansplatting,
-      title={Variational Bayes Gaussian Splatting}, 
-      author={Toon Van de Maele and Ozan Catal and Alexander Tschantz and Christopher L. Buckley and Tim Verbelen},
-      year={2024},
-      eprint={2410.03592},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2410.03592}, 
-}
 ```
 
 ## License
